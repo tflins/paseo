@@ -1,4 +1,7 @@
-import React, { memo, useCallback, useRef, type ReactNode } from "react";
+import { getExternalToolPresentation } from "@getpaseo/protocol/external-tool-presentation";
+import { externalToolIcon } from "@/tool-calls/external-tool-icon";
+import { describeToolCall } from "../grouping";
+import React, { memo, useCallback, useMemo, useRef, type ReactNode } from "react";
 import { ScrollView } from "react-native";
 import { Wrench } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
@@ -30,6 +33,14 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
   const scrollRef = useRef<ScrollView>(null);
   const isCompact = useIsCompactFormFactor();
   const aggregateSummary = useOverviewSummaryLabel(group.summary);
+  const sourceIcon = useMemo(() => {
+    for (const call of group.run.calls) {
+      if (call.kind === "thought") continue;
+      const { source } = getExternalToolPresentation(describeToolCall(call));
+      if (source) return externalToolIcon({ source, icon: source.icon }, Wrench);
+    }
+    return Wrench;
+  }, [group.run.calls]);
   const scrollToLatest = useCallback(() => {
     scrollRef.current?.scrollToEnd({ animated: false });
   }, []);
@@ -65,7 +76,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
         <ExpandableBadge
           testID="tool-call-group"
           label={aggregateSummary}
-          icon={Wrench}
+          icon={sourceIcon}
           isLoading={group.isLoading}
           isExpanded={false}
           isLastInSequence={isLastInSequence}
@@ -82,7 +93,7 @@ export const OverviewToolCallGroupView = memo(function OverviewToolCallGroupView
     <ExpandableBadge
       testID="tool-call-group"
       label={aggregateSummary}
-      icon={Wrench}
+      icon={sourceIcon}
       isLoading={group.isLoading}
       isExpanded={expanded}
       isLastInSequence={isLastInSequence}

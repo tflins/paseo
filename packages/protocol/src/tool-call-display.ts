@@ -1,3 +1,4 @@
+import { getExternalToolPresentation } from "./external-tool-presentation.js";
 import type { ToolCallTimelineItem } from "./agent-types.js";
 import {
   buildAgentMessageDisplay,
@@ -169,6 +170,7 @@ export function buildToolCallDisplayModel(input: ToolCallDisplayInput): ToolCall
   const unknownDetailOverride = buildUnknownDetailOverride(input);
   const displayName =
     unknownDetailOverride.displayName ??
+    getExternalToolPresentation(input).title ??
     canonicalDisplay.displayName ??
     humanizeToolName(input.name);
   const summary = unknownDetailOverride.summary ?? canonicalDisplay.summary;

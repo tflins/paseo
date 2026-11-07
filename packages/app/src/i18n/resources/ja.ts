@@ -2128,7 +2128,13 @@ export const ja: TranslationResources = {
     showMore: "もっと見る",
     showLess: "折りたたむ",
   },
+  chatOutlinePreview: {
+    unloaded: "回答は未読み込みです。目盛りをクリックして履歴を開きます。",
+    hint: "クリックして移動 · 会話全体の索引",
+    position: "{{position}} / {{count}}: {{prompt}}",
+  },
   toolCallGroup: {
+    sources: "{{sources}} を使用",
     thought: "思考",
     editedFiles: {
       one: "{{count}}個のファイルを編集",

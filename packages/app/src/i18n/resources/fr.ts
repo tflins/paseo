@@ -2155,7 +2155,13 @@ export const fr: TranslationResources = {
     showMore: "Afficher plus",
     showLess: "Afficher moins",
   },
+  chatOutlinePreview: {
+    unloaded: "Aucune réponse chargée. Cliquez pour ouvrir cet échange.",
+    hint: "Cliquer pour accéder · index complet",
+    position: "{{position}} sur {{count}} : {{prompt}}",
+  },
   toolCallGroup: {
+    sources: "utilisé {{sources}}",
     thought: "Réfléchi",
     editedFiles: {
       one: "{{count}} fichier modifié",

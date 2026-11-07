@@ -1026,6 +1026,9 @@ function mapMcpToolCallItem(
     output,
     status,
     error,
+    ...(isRecord(item.appContext)
+      ? { metadata: { codexAppContext: presentationAppContext(item.appContext) } }
+      : {}),
     cwd: options?.cwd ?? null,
   };
 }
@@ -1206,4 +1209,20 @@ export function mapCodexToolCallEnvelope(params: {
     ),
     cwd: params.cwd ?? null,
   });
+}
+
+function presentationAppContext(context: Record<string, unknown>): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const key of [
+    "appName",
+    "connectorId",
+    "actionName",
+    "logoUrl",
+    "logoUrlDark",
+    "logoDarkUrl",
+  ]) {
+    const value = context[key];
+    if (typeof value === "string" && value.length <= 4096) result[key] = value;
+  }
+  return result;
 }

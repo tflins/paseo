@@ -31,6 +31,12 @@ The trigger can only stay put when the list has scroll room for the change. When
 content fits the viewport, or a collapse at the end would need an offset past the end, the list
 ends at its end and the trigger moves by the difference.
 
+## 聊天目录预览
+
+目录使用 daemon 的完整提示词索引；回答预览只来自当前已加载的同一 epoch 的消息。索引中存在提问不代表其回答已经加载，因此缺少片段时显示提示，由用户点击刻度触发既有的历史窗口跳转。悬停本身不请求历史，也不展开已折叠的回合。
+
+桌面目录位于左侧。是否常驻取决于正文宽度与面板宽度之间的边距，不使用固定面板断点；边距不足时只在外侧留一个窄触发区域，有精细指针的设备可悬停显示，键盘聚焦同样显示预览。历史回答缓存与正在生成的回答分开计算，避免每个增量都重新扫描整段历史。
+
 ## Web
 
 `holdRow` pins the row in the reading anchor and runs `apply`; the next reading reconcile restores

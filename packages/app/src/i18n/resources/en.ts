@@ -2132,7 +2132,13 @@ export const en = {
     showMore: "Show more",
     showLess: "Show less",
   },
+  chatOutlinePreview: {
+    unloaded: "No loaded answer yet. Jump to this turn to load its history.",
+    hint: "Click a tick to jump · full conversation index",
+    position: "{{position}} of {{count}}: {{prompt}}",
+  },
   toolCallGroup: {
+    sources: "used {{sources}}",
     thought: "Thought",
     editedFiles: {
       one: "edited {{count}} file",

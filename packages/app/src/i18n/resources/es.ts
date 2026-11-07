@@ -2155,7 +2155,13 @@ export const es: TranslationResources = {
     showMore: "Mostrar más",
     showLess: "Mostrar menos",
   },
+  chatOutlinePreview: {
+    unloaded: "Sin respuesta cargada. Haz clic para abrir este turno.",
+    hint: "Haz clic para saltar · índice completo",
+    position: "{{position}} de {{count}}: {{prompt}}",
+  },
   toolCallGroup: {
+    sources: "usó {{sources}}",
     thought: "Razonó",
     editedFiles: {
       one: "editó {{count}} archivo",

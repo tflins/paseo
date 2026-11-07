@@ -7,6 +7,8 @@ import { planTimelinePromptJump } from "@/timeline/timeline-sync-plan";
 import type { StreamItem } from "@/types/stream";
 import type { StreamViewportHandle } from "../strategy";
 import {
+  buildChatOutlineReplyPreviews,
+  type ChatOutlineReplyPreview,
   createActivePromptPublisher,
   resolveActivePromptSeq,
   shouldAcceptPromptIndexEpoch,
@@ -39,6 +41,7 @@ export interface UseChatOutlineInput {
 }
 
 export interface ChatOutline {
+  replyPreviews: ReadonlyMap<number, ChatOutlineReplyPreview>;
   prompts: ChatOutlinePrompt[];
   activePrompt: ActivePromptSource;
   jumpToPrompt: (seq: number) => void;
@@ -85,6 +88,21 @@ export function useChatOutline({
   const loadedTail = enabled ? tail : NO_STREAM_ITEMS;
   const loadedHead = enabled ? (head ?? NO_STREAM_ITEMS) : NO_STREAM_ITEMS;
   const prompts = enabled ? (index?.prompts ?? NO_PROMPTS) : NO_PROMPTS;
+
+  const historyReplies = useMemo(
+    () => buildChatOutlineReplyPreviews({ prompts, items: loadedTail, epoch: timelineEpoch }),
+    [loadedTail, prompts, timelineEpoch],
+  );
+  const replyPreviews = useMemo(
+    () =>
+      buildChatOutlineReplyPreviews({
+        prompts,
+        items: loadedHead,
+        epoch: timelineEpoch,
+        previous: historyReplies,
+      }),
+    [historyReplies, loadedHead, prompts, timelineEpoch],
+  );
 
   // The viewed timeline already owns live delivery and reconnect catch-up. Its complete
   // loaded items (including rows outside the mounted window) invalidate the prompt index.
@@ -221,5 +239,5 @@ export function useChatOutline({
       });
   });
 
-  return { prompts, activePrompt, jumpToPrompt, reportReadingPosition };
+  return { prompts, replyPreviews, activePrompt, jumpToPrompt, reportReadingPosition };
 }

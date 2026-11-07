@@ -1,3 +1,5 @@
+import type { ExternalToolPresentation } from "@getpaseo/protocol/external-tool-presentation";
+import { externalToolIcon } from "@/tool-calls/external-tool-icon";
 import type { ComponentType } from "react";
 import {
   Bot,
@@ -38,6 +40,10 @@ export function resolveToolCallIcon(
   toolName: string,
   detail?: ToolCallDetail,
   agentMessage?: AgentMessage,
+  external?: ExternalToolPresentation,
 ): ToolCallIconComponent {
-  return componentForToolCallIcon(resolveToolCallIconName(toolName, detail, agentMessage));
+  const fallback = componentForToolCallIcon(
+    resolveToolCallIconName(toolName, detail, agentMessage),
+  );
+  return external ? externalToolIcon(external, fallback) : fallback;
 }

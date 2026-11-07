@@ -2106,7 +2106,13 @@ export const ar: TranslationResources = {
     showMore: "عرض المزيد",
     showLess: "عرض أقل",
   },
+  chatOutlinePreview: {
+    unloaded: "لم تُحمّل إجابة بعد. انقر للانتقال إلى هذه الجولة.",
+    hint: "انقر للانتقال · فهرس المحادثة الكامل",
+    position: "{{position}} من {{count}}: {{prompt}}",
+  },
   toolCallGroup: {
+    sources: "استخدم {{sources}}",
     thought: "فكّر",
     editedFiles: {
       one: "حرّر {{count}} ملفًا",

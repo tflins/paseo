@@ -2141,7 +2141,13 @@ export const ru: TranslationResources = {
     showMore: "Показать больше",
     showLess: "Свернуть",
   },
+  chatOutlinePreview: {
+    unloaded: "Ответ ещё не загружен. Нажмите, чтобы открыть этот ход.",
+    hint: "Нажмите для перехода · полный индекс",
+    position: "{{position}} из {{count}}: {{prompt}}",
+  },
   toolCallGroup: {
+    sources: "использованы {{sources}}",
     thought: "Обдумал",
     editedFiles: {
       one: "изменён {{count}} файл",

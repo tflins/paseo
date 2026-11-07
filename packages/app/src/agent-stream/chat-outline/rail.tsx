@@ -1,7 +1,9 @@
-import type { ActivePromptSource, ChatOutlinePrompt } from "./model";
+import type { ActivePromptSource, ChatOutlinePrompt, ChatOutlineReplyPreview } from "./model";
 
 export interface ChatOutlineRailProps {
   prompts: ChatOutlinePrompt[];
+  contentMaxWidth: number;
+  replyPreviews: ReadonlyMap<number, ChatOutlineReplyPreview>;
   activePrompt: ActivePromptSource;
   onJumpToPrompt: (seq: number) => void;
 }

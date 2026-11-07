@@ -1,3 +1,4 @@
+import { summarizeToolCalls } from "./overview/model";
 import { describe, expect, it } from "vitest";
 import type { ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import type { StreamItem, ToolCallItem } from "@/types/stream";
@@ -571,4 +572,22 @@ it("shows one thought as itself until another groupable item arrives", () => {
   });
   expect(grouped.tail.map((item) => item.id)).toEqual([thought.id]);
   expect(grouped.groupsByHostId.get(thought.id)?.run.calls).toHaveLength(2);
+});
+
+it("summarizes distinct tool sources without double-counting them as other tools", () => {
+  const chrome = {
+    type: "unknown",
+    input: {},
+    output: { _meta: { "codex/toolSurface": { kind: "browserUse", browserFamily: "chrome" } } },
+  } satisfies ToolCallDetail;
+  const generic = { type: "unknown", input: {}, output: null } satisfies ToolCallDetail;
+  const summary = summarizeToolCalls([
+    toolCall("1", chrome, { name: "cua_repl.js" }),
+    toolCall("2", chrome, { name: "cua_repl.js" }),
+    toolCall("3", generic, { name: "cua_repl.js" }),
+    toolCall("4", generic, { name: "mcp__calendar__list_events" }),
+    toolCall("5", generic, { name: "custom_tool" }),
+  ]);
+  expect(summary.toolSources).toEqual(["Chrome", "Computer Use", "calendar"]);
+  expect(summary.otherToolCount).toBe(1);
 });

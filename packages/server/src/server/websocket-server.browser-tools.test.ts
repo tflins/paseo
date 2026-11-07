@@ -3,6 +3,7 @@ import { createServer, type Server as HTTPServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
 import type {
+  BrowserHostIdentity,
   BrowserAutomationCommandName,
   BrowserAutomationExecuteRequest,
   BrowserAutomationExecuteResponse,
@@ -35,6 +36,7 @@ interface BrowserToolsDaemonHarness {
 
 interface ConnectBrowserHostClientOptions {
   clientId?: string;
+  identity?: BrowserHostIdentity;
   capabilities?: Record<string, unknown>;
 }
 
@@ -106,6 +108,70 @@ describe("WebSocketServer browser tools wiring", () => {
       ok: true,
       result: { command: "list_tabs", tabs: [] },
     });
+  });
+
+  it("routes new tabs to the local window and retains selection across real reconnections", async () => {
+    const harness = await startBrowserToolsDaemonHarness();
+    const identity = {
+      hostId: "window-a",
+      label: "Mac A / Window 1",
+      localServerId: "test-server",
+    };
+    const local = await harness.connectBrowserHostClient({ clientId: "desktop-a", identity });
+    await harness.connectBrowserHostClient({
+      clientId: "desktop-b",
+      identity: { hostId: "window-b", label: "Mac B / Window 1", localServerId: "other-server" },
+    });
+    const hosts = harness.broker.listHosts();
+    expect(hosts).toHaveLength(2);
+    const selected = hosts.find((host) => host.isLocal);
+    if (!selected) throw new Error("Expected the local window");
+    expect(selected.hostId).not.toBe(identity.hostId);
+
+    const pending = harness.broker.execute({
+      agentId: "agent-a",
+      workspaceId: "workspace-a",
+      command: { command: "new_tab", args: { url: "http://localhost:3001" } },
+    });
+    const request = await local.nextBrowserRequest();
+    expect(request.command).toEqual({ command: "new_tab", args: { url: "http://localhost:3001" } });
+    local.respondToBrowserRequest({
+      type: "browser.automation.execute.response",
+      payload: {
+        requestId: request.requestId,
+        ok: true,
+        result: {
+          command: "new_tab",
+          browserId: BROWSER_ID,
+          workspaceId: "workspace-a",
+          url: "http://localhost:3001",
+        },
+      },
+    });
+    expect(await pending).toMatchObject({ ok: true });
+
+    await local.disconnect();
+    expect(
+      await harness.broker.execute({
+        agentId: "agent-a",
+        command: { command: "new_tab", args: {} },
+      }),
+    ).toMatchObject({ ok: false, error: { code: "browser_no_host" } });
+    const resumed = await harness.connectBrowserHostClient({ clientId: "desktop-a", identity });
+    expect(harness.broker.listHosts().find((host) => host.isLocal)?.hostId).toBe(selected.hostId);
+    const snapshot = harness.broker.execute({
+      command: { command: "snapshot", args: { browserId: BROWSER_ID } },
+    });
+    const snapshotRequest = await resumed.nextBrowserRequest();
+    resumed.respondToBrowserRequest({
+      type: "browser.automation.execute.response",
+      payload: {
+        requestId: snapshotRequest.requestId,
+        ok: false,
+        error: { code: "browser_tab_closed", message: "Closed for test", retryable: false },
+      },
+    });
+    expect(await snapshot).toMatchObject({ ok: false, error: { code: "browser_tab_closed" } });
   });
 
   it("unregisters capable clients on disconnect and clears pending browser commands", async () => {
@@ -231,7 +297,7 @@ async function startBrowserToolsDaemonHarness(): Promise<BrowserToolsDaemonHarne
       const capability = (options.capabilities ?? browserHostCapabilities())[
         CLIENT_CAPS.browserHost
       ] as { hostKind: "desktop app"; supportedCommands: BrowserAutomationCommandName[] };
-      const observation = client.registerBrowserHost(capability);
+      const observation = client.registerBrowserHost({ ...capability, identity: options.identity });
       await observation.ready;
 
       return {
@@ -240,11 +306,12 @@ async function startBrowserToolsDaemonHarness(): Promise<BrowserToolsDaemonHarne
         respondToBrowserRequest: (response) =>
           client.sendBrowserAutomationExecuteResponse(response),
         async disconnect() {
+          const expectedCount = broker.getRegisteredClientCount() - 1;
           await observation.release();
           requests.close();
           clients.delete(client);
           await client.close();
-          await waitFor(() => broker.getRegisteredClientCount() === 0);
+          await waitFor(() => broker.getRegisteredClientCount() === expectedCount);
         },
       };
     },
@@ -261,7 +328,15 @@ async function startBrowserToolsDaemonHarness(): Promise<BrowserToolsDaemonHarne
 }
 
 function createBroker(): BrowserToolsBroker {
+  const bindings = new Map<string, string>();
   return new BrowserToolsBroker({
+    serverId: "test-server",
+    bindings: {
+      getBrowserHostId: async (id) => bindings.get(id) ?? null,
+      setBrowserHostId: async (id, hostId) => {
+        bindings.set(id, hostId);
+      },
+    },
     defaultTimeoutMs: 500,
     createRequestId: createRequestIdSequence(),
   });

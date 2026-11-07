@@ -1482,3 +1482,19 @@ describe("empty additions in multi-file previews", () => {
     },
   );
 });
+
+it("preserves Codex integration context alongside raw tool details", () => {
+  const appContext = { appName: "Calendar", connectorId: "calendar", actionName: "Read events" };
+  const result = mapCodexToolCallFromThreadItem({
+    type: "mcpToolCall",
+    id: "calendar-call",
+    server: "calendar",
+    tool: "list_events",
+    status: "completed",
+    arguments: {},
+    result: { content: [] },
+    appContext,
+  });
+  expect(result?.metadata?.codexAppContext).toEqual(appContext);
+  expect(result?.detail).toMatchObject({ type: "unknown", input: {}, output: { content: [] } });
+});

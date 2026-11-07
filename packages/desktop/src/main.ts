@@ -10,6 +10,8 @@ log.initialize({ spyRendererConsole: true });
 import { inheritLoginShellEnv } from "./login-shell-env.js";
 
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { hostname } from "node:os";
 import { pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -29,7 +31,7 @@ import {
   shell,
   webContents,
 } from "electron";
-import { registerDaemonManager } from "./daemon/daemon-manager.js";
+import { registerDaemonManager, resolveDesktopDaemonStatus } from "./daemon/daemon-manager.js";
 import { parsePassthroughCliArgsFromArgv, runPassthroughCli } from "./daemon/cli/passthrough.js";
 import { closeAllTransportSessions } from "./daemon/local-transport.js";
 import {
@@ -388,6 +390,24 @@ ipcMain.handle("paseo:get-pending-open-project", (event) => {
 
 ipcMain.handle("paseo:agent-navigation:ready", (event) => {
   return agentNavigationInbox.windowReady(event.sender.id);
+});
+
+const browserHostIds = new WeakMap<Electron.WebContents, string>();
+
+ipcMain.handle("paseo:browser:get-host-identity", async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  if (!window) throw new Error("Browser hosting requires a desktop window.");
+  let hostId = browserHostIds.get(event.sender);
+  if (!hostId) {
+    hostId = randomUUID();
+    browserHostIds.set(event.sender, hostId);
+  }
+  const status = await resolveDesktopDaemonStatus();
+  return {
+    hostId,
+    label: `${hostname()} / Window ${window.id}`,
+    localServerId: status.serverId || null,
+  };
 });
 
 ipcMain.handle("paseo:browser:register-attached", (event, rawInput: unknown) => {

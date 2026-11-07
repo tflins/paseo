@@ -1,7 +1,12 @@
-import { beforeEach, describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { subscriptionFixture } from "@/runtime/subscription-fixture";
 import type { SessionInboundMessage, SessionOutboundMessage } from "@getpaseo/protocol/messages";
 import { createJSONStorage, type StateStorage } from "zustand/middleware";
-import { mountBrowserAutomationHandler } from "./handler";
+import {
+  mountBrowserAutomationHandler,
+  mountBrowserAutomationDaemonClientHandler,
+} from "./handler";
 import type { DesktopHostBridge } from "@/desktop/host";
 import { useBrowserStore } from "@/desktop/browser/store";
 import { findPaneById } from "@/stores/workspace-layout-actions";
@@ -156,6 +161,49 @@ class BrowserAutomationHandlerHarness {
     this.client.receive(request);
   }
 }
+
+class RegisteringDaemonClient extends FakeDaemonClient {
+  public readonly registrations: Array<Parameters<DaemonClient["registerBrowserHost"]>[0]> = [];
+  public registerBrowserHost(registration: Parameters<DaemonClient["registerBrowserHost"]>[0]) {
+    this.registrations.push(registration);
+    return subscriptionFixture(
+      Promise.resolve({ requestId: "register", subscriptionId: "registration" }),
+      (receive) => this.on("browser.automation.execute.request", receive),
+    );
+  }
+}
+
+describe("browser host registration", () => {
+  const identity = { hostId: "window-1", label: "Local window", localServerId: "server-1" };
+
+  test("registers the desktop window identity on each daemon connection", async () => {
+    const first = new RegisteringDaemonClient();
+    const second = new RegisteringDaemonClient();
+    const getHost = () => ({ browser: { getHostIdentity: async () => identity } });
+    const stopFirst = mountBrowserAutomationDaemonClientHandler(first, { getHost });
+    const stopSecond = mountBrowserAutomationDaemonClientHandler(second, { getHost });
+    await vi.waitFor(() => expect(second.registrations).toHaveLength(1));
+    expect(first.registrations[0]).toMatchObject({ identity });
+    expect(second.registrations[0]).toMatchObject({ identity });
+    stopFirst();
+    stopSecond();
+  });
+
+  test("does not register a window after its handler was unmounted", async () => {
+    const client = new RegisteringDaemonClient();
+    let resolveIdentity: (value: unknown) => void = () => {};
+    const pendingIdentity = new Promise<unknown>((resolve) => {
+      resolveIdentity = resolve;
+    });
+    const stop = mountBrowserAutomationDaemonClientHandler(client, {
+      getHost: () => ({ browser: { getHostIdentity: () => pendingIdentity } }),
+    });
+    stop();
+    resolveIdentity(identity);
+    await pendingIdentity;
+    expect(client.registrations).toEqual([]);
+  });
+});
 
 function browserAutomationRequest(): BrowserAutomationExecuteRequest {
   return {

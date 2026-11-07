@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory, type BackgroundVisibility } from "./agent/directory.js";
@@ -2460,6 +2461,14 @@ export class Session {
       unregister = this.browserToolsBroker.registerClient({
         id: owner.id,
         hostKind: request.hostKind,
+        identity: request.identity
+          ? {
+              ...request.identity,
+              hostId: `bhost_${createHash("sha256")
+                .update(JSON.stringify([this.getHostSourceId(), request.identity.hostId]))
+                .digest("hex")}`,
+            }
+          : undefined,
         supportedCommands: request.supportedCommands,
         sendBrowserAutomationRequest: (message) => owner.emit(message),
       });
@@ -4655,6 +4664,11 @@ export class Session {
     agentId?: string,
     onAgentReady?: (agent: AgentSnapshotPayload) => Promise<void>,
   ): Promise<CreatedAgent> {
+    const browserSource = this.delivery.currentSource;
+    const browserClients = browserSource
+      ? this.delivery.subscriptionIds(browserSource, "browser-host")
+      : [];
+    const initialBrowserHostId = this.browserToolsBroker?.getLocalHostForClients(browserClients);
     const {
       config,
       worktreeName,
@@ -4724,6 +4738,8 @@ export class Session {
           kind: "session",
           onAgentReady: async (agent) => {
             createdAgentId = agent.id;
+            if (initialBrowserHostId)
+              await this.agentStorage.setBrowserHostId(agent.id, initialBrowserHostId);
             await onAgentReady?.(await this.buildAgentPayload(agent));
           },
           agentId,

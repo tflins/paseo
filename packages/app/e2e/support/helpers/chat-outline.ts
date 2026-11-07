@@ -105,7 +105,7 @@ export async function pressEnterOnFocusedPrompt(page: Page): Promise<void> {
 }
 
 export async function expectChatOutlinePreview(page: Page, preview: string): Promise<void> {
-  await expect(page.getByTestId("chat-outline-preview")).toHaveText(preview);
+  await expect(page.getByTestId("chat-outline-question")).toHaveText(preview);
 }
 
 export async function expectNoChatOutlinePreview(page: Page): Promise<void> {

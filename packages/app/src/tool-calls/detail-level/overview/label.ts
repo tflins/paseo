@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import type { OverviewSummary } from "./model";
 
-function joinSummaryParts(parts: string[], conjunction: string): string {
+function joinSummaryParts(parts: string[], conjunction: string, capitalize = true): string {
   if (parts.length === 0) {
     return "";
   }
@@ -12,6 +12,7 @@ function joinSummaryParts(parts: string[], conjunction: string): string {
   } else if (parts.length > 2) {
     joined = `${parts.slice(0, -1).join(", ")}, ${conjunction} ${parts.at(-1)}`;
   }
+  if (!capitalize) return joined;
   const firstCharacter = joined[0];
   return firstCharacter ? `${firstCharacter.toLocaleUpperCase()}${joined.slice(1)}` : joined;
 }
@@ -38,6 +39,10 @@ export function useOverviewSummaryLabel(
       if (count > 0) {
         parts.push(t(`${key}.${count === 1 ? "one" : "other"}`, { count }));
       }
+    }
+    if (summary.toolSources?.length) {
+      const sources = joinSummaryParts(summary.toolSources, t("toolCallGroup.and"), false);
+      parts.push(t("toolCallGroup.sources", { sources }));
     }
     for (const [action, count] of Object.entries(summary.paseoActions)) {
       parts.push(

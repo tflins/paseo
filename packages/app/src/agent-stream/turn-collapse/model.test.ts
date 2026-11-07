@@ -287,3 +287,24 @@ describe("collapseTurns", () => {
     });
   });
 });
+
+it("folds external-tool-only turns and refreshes their source labels", () => {
+  function external(browser: string): ToolCallItem {
+    const item = shell("external");
+    if (item.payload.source !== "agent") throw new Error("Expected an agent call");
+    item.payload.data.name = "cua_repl.js";
+    item.payload.data.detail = {
+      type: "unknown",
+      input: { title: "Inspect tabs" },
+      output: { _meta: { "codex/toolSurface": { kind: "browserUse", browserFamily: browser } } },
+    };
+    return item;
+  }
+  const first = collapse([user("u"), external("Chrome"), reply("r")]);
+  expect(first.turnsByHostId.get("u")?.summary.tools.toolSources).toEqual(["Chrome"]);
+  expect(ids(first.tail)).toEqual(["u", "r"]);
+  const next = collapse([user("u"), external("Firefox"), reply("r")], {
+    previousTurnsByHostId: first.turnsByHostId,
+  });
+  expect(next.updatedHostIds.has("u")).toBe(true);
+});

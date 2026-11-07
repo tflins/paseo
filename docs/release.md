@@ -2,6 +2,20 @@
 
 All workspaces share one version and release together.
 
+## 定制版发布
+
+`tflins/paseo` 使用 `官方版本-tflins.修订号`，首版为 `0.15.2-tflins.1`，基于官方 `0.15.2` 的 `dc51a3b6a`，包含浏览器宿主路由修复。同一官方版本继续定制时递增修订号，例如 `0.15.2-tflins.2`。同步官方 `0.15.3` 后使用 `0.15.3-tflins.1`。同一官方版本内同步了新的 main 提交，也要递增定制修订号，并在发布说明记录准确的上游提交。
+
+`origin/main` 是定制版主线，`fl/*` 开发分支验证后合入该主线。Git remote `origin` 指向自己的 fork，`upstream` 指向 `getpaseo/paseo`。同步官方时先 fetch，再把 `upstream/main` 合入本地 `main`，解决冲突并验证后推送到 `origin/main`。保留定制提交、版本后缀和更新源，不要重置或强制覆盖主线。普通主线合并不发布安装包；发布使用主线上的 `tflins-v*` 标签。
+
+桌面更新源由 `packages/desktop/electron-builder.yml` 的 `publish` 配置指定，固定为 `tflins/paseo`。保留应用 ID、应用名和数据目录，使替换安装继续读取现有数据。当前定制版使用应用的稳定更新通道：发布普通 Release，并显式生成 `latest-mac.yml`；不要因为版本带 `-tflins` 就把 GitHub Release 标记为预发布。SemVer 将该后缀视为 prerelease，但修订号和上游版本的递增仍可正常比较。首次从官方同版本切换到定制版需要手动安装。自有 beta 通道尚未配置。macOS 更新需要同时提供 ZIP、对应 blockmap 和更新清单，DMG 用于手动安装。
+
+本地构建不发布 Release。未签名、未公证的包只用于本地测试；macOS 自动安装更新需要配置 Apple 签名并验证升级链路。仓库没有已发布的 Release 时，更新检查不能提供可安装版本。发布前检查打包产物中的 `Contents/Resources/app-update.yml`，确认 owner 为 `tflins`。本 fork 的桌面发布不要运行下面的上游 npm 发布命令，它们仍使用官方 npm scope。
+
+`.github/workflows/fork-desktop-release.yml` 只在 `tflins/paseo` 运行。推送 `tflins-v0.15.2-tflins.1` 形式的标签后，自动构建 macOS ARM64 包、执行检查及隔离启动测试、验证更新清单校验和，再上传到草稿 Release 并公开发布。工作流拒绝覆盖已公开的同名 Release；修复已发布版本时递增修订号。独立的 `tflins-v` 前缀不会触发上游的 `v*` 发布工作流。
+
+未配置 `APPLE_CERTIFICATE` 时，工作流生成未签名测试包。配置 `APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID` 后使用签名和公证构建。工作流只上传桌面产物，不发布 npm 包或移动应用；代码合并和版本递增仍由维护者完成。
+
 ## Two steps
 
 A release has exactly two steps. The agent does the first, the user authorizes the second.

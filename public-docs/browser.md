@@ -46,6 +46,10 @@ The tools are part of the [Paseo MCP toolset](/docs/mcp), so **Enable Paseo tool
 
 Browser tabs are hosted by the Paseo desktop app. The daemon itself doesn't run a browser — it routes tool calls to a connected desktop app, and returns an error when none is connected. The wire contract is host-neutral, so other hosts can carry the same tools later.
 
+New tabs use the agent's remembered browser window. Creating an agent from a desktop window on the daemon's machine binds that window when its browser host is already registered. Otherwise, the first new tab selects the only identified window on that machine. When several windows are available, use `browser_list_hosts` and `browser_select_host` to choose one. A window on another machine requires explicit selection; `localhost` then refers to that machine.
+
+If the selected window disconnects, new tabs fail until it reconnects or you select another host. WebSocket reconnects and renderer reloads preserve the window identity; closing the window or restarting Desktop creates a new identity and requires selection again. Update both the daemon and Desktop to use this routing. Older Desktop versions without host identity can still handle existing tabs, but cannot be selected for new tabs.
+
 ## How an agent sees a page
 
 The primary tool is `browser_snapshot`, which returns the page as an accessibility tree — headings, text, form state, and hierarchy — instead of raw HTML:

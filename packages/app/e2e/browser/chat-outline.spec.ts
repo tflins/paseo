@@ -44,9 +44,7 @@ import {
   type LongTimelineAgent,
 } from "../support/helpers/timeline-pagination";
 
-// Wide enough that the timeline panel clears the rail's MIN_PANEL_WIDTH with room
-// to spare. At 1280 the panel measures 960, which sits too close to the threshold
-// for chrome-width changes elsewhere to stay out of these tests.
+// A wide panel reserves enough side gutter for the persistent outline.
 const WIDE_VIEWPORT = { width: 1440, height: 900 };
 const LOADED_TURNS = 16;
 
@@ -76,7 +74,9 @@ test.describe("desktop chat outline", () => {
     });
   });
 
-  test("indexes unloaded prompts and jumps with one bounded merged page", async ({ page }) => {
+  test("indexes unloaded prompts and jumps with one bounded merged page", async ({
+    page,
+  }, testInfo) => {
     test.setTimeout(120_000);
     const agent = await seedLongMockAgentTimeline({ turns: 80 });
     try {
@@ -87,11 +87,18 @@ test.describe("desktop chat outline", () => {
       const rail = chatOutlineRail(page);
       await expectChatOutlinePrompts(page, 80);
       await expectTimelinePromptNotMounted(page, agent.oldestPrompt);
+      await rail.getByRole("tab").first().hover();
+      await expect(page.getByTestId("chat-outline-question")).toHaveText(agent.oldestPrompt);
+      await expect(page.getByTestId("chat-outline-answer")).toContainText("No loaded answer");
+      expect(jumps.requests()).toHaveLength(0);
 
       await rail.getByRole("tab").nth(39).click();
       await expectTimelinePromptLandedBelowTop(page, agent.prompts[39]);
       await expect.poll(() => jumps.requests()).toHaveLength(1);
       expect(jumps.requests()[0]).toMatchObject({ limit: 40, mergeWindow: true });
+      await rail.getByRole("tab").nth(39).hover();
+      await expect(page.getByTestId("chat-outline-answer")).toContainText("stress-update-0");
+      await page.screenshot({ path: testInfo.outputPath("chat-outline-preview-wide.png") });
 
       await page.getByTestId("scroll-to-bottom-button").click();
       await expectTimelinePromptVisible(page, agent.newestPrompt);
@@ -300,15 +307,33 @@ test.describe("desktop chat outline", () => {
     });
   });
 
-  test("hides the rail when a split makes its panel narrow", async ({ page }) => {
+  test("reveals the rail in a narrow split without covering the transcript", async ({
+    page,
+  }, testInfo) => {
     const agent = await seedLongMockAgentTimeline({ turns: 2 });
     try {
       await page.setViewportSize(WIDE_VIEWPORT);
       await openAgentTimeline(page, agent);
 
       await splitCurrentPanelRight(page);
-
-      await expectNoChatOutline(page);
+      const rail = chatOutlineRail(page);
+      await expect(rail).toHaveCSS("opacity", "0");
+      await hoverChatOutlinePrompt(page, 1);
+      await expect(rail).toHaveCSS("opacity", "1");
+      await expectChatOutlinePreview(page, agent.oldestPrompt);
+      const preview = await page.getByTestId("chat-outline-preview").boundingBox();
+      const panel = await page.getByTestId("agent-chat-scroll").first().boundingBox();
+      expect(preview).not.toBeNull();
+      expect(panel).not.toBeNull();
+      expect(preview!.x + preview!.width).toBeLessThanOrEqual(panel!.x + panel!.width);
+      await page.screenshot({ path: testInfo.outputPath("chat-outline-preview-split.png") });
+      await movePointerOffChatOutline(page);
+      await expect(rail).toHaveCSS("opacity", "0");
+      await focusChatOutlinePrompt(page, 1);
+      await expect(rail.getByRole("tab").first()).toBeFocused();
+      await expect(rail).toHaveCSS("opacity", "1");
+      await pressEnterOnFocusedPrompt(page);
+      await expectTimelinePromptVisible(page, agent.oldestPrompt);
     } finally {
       await agent.cleanup();
     }

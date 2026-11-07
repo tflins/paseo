@@ -2153,7 +2153,13 @@ export const ptBR: TranslationResources = {
     showMore: "Mostrar mais",
     showLess: "Mostrar menos",
   },
+  chatOutlinePreview: {
+    unloaded: "Nenhuma resposta carregada. Clique para abrir esta interação.",
+    hint: "Clique para navegar · índice completo",
+    position: "{{position}} de {{count}}: {{prompt}}",
+  },
   toolCallGroup: {
+    sources: "usou {{sources}}",
     thought: "Pensou",
     editedFiles: {
       one: "editou {{count}} arquivo",

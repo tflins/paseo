@@ -670,7 +670,14 @@ export async function createPaseoDaemon(
     logger.error({ err: error }, "Failed to maintain orchestration skills at startup");
   });
   const browserToolsPolicy = new DaemonConfigBrowserToolsPolicy(daemonConfigStore);
-  const browserToolsBroker = new BrowserToolsBroker({});
+  const serverId = getOrCreateServerId(config.paseoHome, { logger });
+  const browserToolsBroker = new BrowserToolsBroker({
+    serverId,
+    bindings: {
+      getBrowserHostId: (agentId) => agentStorage.getBrowserHostId(agentId),
+      setBrowserHostId: (agentId, hostId) => agentStorage.setBrowserHostId(agentId, hostId),
+    },
+  });
   const pluginRuntime: PluginService = new PluginService(logger, daemonConfigStore, daemonVersion, {
     usageAgents: {
       hasAgent: (id) => agentManager.getAgent(id) !== null,
@@ -684,7 +691,6 @@ export async function createPaseoDaemon(
     settingsDirectory: path.join(config.paseoHome, "plugin-settings"),
   });
 
-  const serverId = getOrCreateServerId(config.paseoHome, { logger });
   const daemonKeyPair = await loadOrCreateDaemonKeyPair(config.paseoHome, logger);
   const managedProcesses = createBootstrapManagedProcessRegistry(config, logger);
   // Reconcile the helper-process ledger in the background so it never blocks the

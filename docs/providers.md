@@ -119,6 +119,14 @@ Draft metadata lookups should avoid creating provider sessions when the upstream
 
 Provider session import has its own contract. The picker calls `listImportableSessions` and receives rows only: provider handle, cwd, title, prompt previews, and last activity. Import calls `importSession({ providerHandleId, cwd })` for the selected row and must not call listing again. The provider returns the resumed session, storage config, persistence handle, and hydrated timeline for that one native session; `AgentManager.importProviderSession` seeds the daemon timeline and publishes the Paseo agent only after it is ready.
 
+## 外部工具展示
+
+外部工具标题、来源和图标的解释统一放在 `packages/protocol/src/external-tool-presentation.ts`，避免聊天行、分组和回合摘要各自识别 Codex 元数据。原始输入与结果仍用于详情展示。
+
+原生应用图标在运行 provider 的宿主读取，不能从查看聊天的设备读取。同一份事件需供桌面、浏览器和手机使用，因此 macOS 图标转换为有大小上限的 PNG 后随可选 metadata 传输。解析失败不影响工具结果；其他系统、未安装的应用或缺少元数据时显示通用图标。不要据此推断浏览器标签页实际所在的机器。
+
+参考 T3 Code 的展示约定；同步上游时保留这两个独立模块及其接入点即可，无须替换整个时间线实现。
+
 ## Provider Helper Processes
 
 Provider-owned helper processes that can outlive an individual agent session must be recorded in the daemon's managed-process registry. Store provider/kind metadata, the PID, launch command/args, and process identity captured from the platform process table. Remove the record on normal exit or shutdown.

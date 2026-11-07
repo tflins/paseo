@@ -2096,7 +2096,13 @@ export const zhCN: TranslationResources = {
     showMore: "展开",
     showLess: "收起",
   },
+  chatOutlinePreview: {
+    unloaded: "尚无已加载回答，可点击刻度跳转查看。",
+    hint: "点击刻度跳转 · 已索引完整对话",
+    position: "第 {{position}} / {{count}} 轮：{{prompt}}",
+  },
   toolCallGroup: {
+    sources: "使用了 {{sources}}",
     thought: "已思考",
     editedFiles: {
       one: "编辑了 {{count}} 个文件",

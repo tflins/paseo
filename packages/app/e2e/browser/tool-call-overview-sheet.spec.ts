@@ -1,3 +1,4 @@
+import { resolveNativeToolIcon } from "../../../server/src/server/agent/providers/codex/native-tool-icon";
 import type { Locator, Page } from "@playwright/test";
 import { test, expect } from "../support/fixtures";
 import { scrollChatAwayFromBottom } from "../support/helpers/agent-bottom-anchor";
@@ -397,6 +398,90 @@ test("forms a closed group when the lone tool call was left closed", async ({ pa
     await expect(group).toBeVisible();
     await expect(group.getByTestId("tool-call-badge")).toHaveCount(0);
     expect(Math.abs((await topOf(group)) - loneTop)).toBeLessThanOrEqual(2);
+  } finally {
+    await agent.cleanup();
+  }
+});
+
+test("shows external tool operation titles, application icons and source summaries", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const agent = await createOverviewAgent(page, "External tool presentation");
+  const calls = new Map<string, number>();
+  const iconUrl =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=";
+  const chromeIcon =
+    (await resolveNativeToolIcon({ kind: "appId", value: "com.google.Chrome" })) ?? iconUrl;
+  const finderIcon =
+    (await resolveNativeToolIcon({ kind: "appId", value: "com.apple.finder" })) ?? iconUrl;
+  try {
+    await page.routeWebSocket(daemonWsRoutePattern(), (ws) => {
+      const server = ws.connectToServer();
+      ws.onMessage((message) => server.send(message));
+      server.onMessage((message) => {
+        const session = parseSessionMessage(message);
+        const payload = session?.payload as
+          | { agentId?: string; event?: { type?: string; item?: Record<string, unknown> } }
+          | undefined;
+        const item = payload?.event?.item;
+        if (
+          session?.type !== "agent_stream" ||
+          payload?.agentId !== agent.agentId ||
+          item?.type !== "tool_call" ||
+          typeof item.callId !== "string"
+        ) {
+          ws.send(message);
+          return;
+        }
+        if (!calls.has(item.callId)) calls.set(item.callId, calls.size);
+        const browser = calls.get(item.callId) === 0;
+        const name = browser ? "Chrome" : "Finder";
+        item.name = "cua_repl.js";
+        item.detail = {
+          type: "unknown",
+          input: { title: `Inspect ${name} windows` },
+          output: {
+            _meta: {
+              "codex/toolSurface": browser
+                ? { kind: "browserUse", browserFamily: "chrome" }
+                : { kind: "computerUse", app: { kind: "appId", appId: "com.apple.finder" } },
+            },
+          },
+        };
+        item.metadata = { nativeToolIcon: browser ? chromeIcon : finderIcon };
+        ws.send(JSON.stringify({ type: "session", message: session }));
+      });
+    });
+    await openOverviewAgent(page, agent);
+    await agent.client.sendAgentMessage(agent.agentId, "Exercise external tool presentation.");
+    const group = page.getByTestId("tool-call-group").first();
+    await expect(group).toContainText("Chrome and Finder", { timeout: 30_000 });
+    await group.getByRole("button").first().click();
+    const chrome = page
+      .getByTestId("tool-call-badge")
+      .filter({ hasText: "Inspect Chrome windows" })
+      .first();
+    const finder = page
+      .getByTestId("tool-call-badge")
+      .filter({ hasText: "Inspect Finder windows" })
+      .first();
+    await expect(chrome).toBeVisible();
+    await expect(finder).toBeVisible();
+    await expect
+      .poll(() =>
+        chrome
+          .locator("img")
+          .first()
+          .evaluate((image: HTMLImageElement) => image.naturalWidth),
+      )
+      .toBeGreaterThan(0);
+    await chrome.getByRole("button").first().click();
+    await expect(chrome).toContainText("title");
+    await chrome.getByRole("button").first().click();
+    await expect(finder).toBeVisible();
+    await page.screenshot({ path: testInfo.outputPath("external-tool-presentation.png") });
   } finally {
     await agent.cleanup();
   }

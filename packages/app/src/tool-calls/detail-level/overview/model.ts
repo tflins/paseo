@@ -1,3 +1,4 @@
+import { getExternalToolPresentation } from "@getpaseo/protocol/external-tool-presentation";
 import { getPaseoToolActionLabel } from "@getpaseo/protocol/paseo-tool-presentation/index";
 import { isTurnTrigger } from "@/agent-stream/turn-membership";
 
@@ -13,6 +14,7 @@ export interface OverviewSummary {
   searchCount: number;
   otherToolCount: number;
   paseoActions: Record<string, number>;
+  toolSources?: string[];
 }
 
 export interface OverviewToolCallGroup {
@@ -35,6 +37,7 @@ export function summarizeToolCalls(calls: readonly GroupableItem[]): OverviewSum
   let searchCount = 0;
   let otherToolCount = 0;
   const paseoActions: Record<string, number> = {};
+  const sources = new Map<string, string>();
 
   for (const call of calls) {
     if (call.kind === "thought") {
@@ -45,6 +48,7 @@ export function summarizeToolCalls(calls: readonly GroupableItem[]): OverviewSum
     const descriptor = describeToolCall(call);
     const normalizedName = descriptor.name.trim().toLowerCase();
     const action = getPaseoToolActionLabel(descriptor.name);
+    const source = getExternalToolPresentation(descriptor).source;
     if (action) {
       paseoActions[action] = (paseoActions[action] ?? 0) + 1;
     } else if (descriptor.detail.type === "edit" || descriptor.detail.type === "write") {
@@ -55,6 +59,8 @@ export function summarizeToolCalls(calls: readonly GroupableItem[]): OverviewSum
       readFiles.add(descriptor.detail.filePath);
     } else if (descriptor.detail.type === "search" || isSearchCall(normalizedName)) {
       searchCount += 1;
+    } else if (source) {
+      sources.set(source.key, source.name);
     } else {
       otherToolCount += 1;
     }
@@ -68,6 +74,7 @@ export function summarizeToolCalls(calls: readonly GroupableItem[]): OverviewSum
     searchCount,
     otherToolCount,
     paseoActions,
+    ...(sources.size ? { toolSources: [...new Set(sources.values())] } : {}),
   };
 }
 

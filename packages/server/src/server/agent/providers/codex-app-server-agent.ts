@@ -1,3 +1,4 @@
+import { decorateNativeToolIcon } from "./codex/native-tool-icon.js";
 import { CodexBackgroundInventory } from "./codex/background-inventory.js";
 import { validateProviderOptions } from "../provider-options.js";
 import {
@@ -2059,7 +2060,9 @@ export async function threadItemToTimeline(
     return await mapCodexThreadImageItem(normalizedType, normalizedItem);
   }
   if (normalizedType && CODEX_TOOL_THREAD_ITEM_TYPES.has(normalizedType)) {
-    return mapCodexToolCallFromThreadItem(normalizedItem, { cwd });
+    const mapped = mapCodexToolCallFromThreadItem(normalizedItem, { cwd });
+    if (mapped && normalizedType === "mcpToolCall") await decorateNativeToolIcon(mapped);
+    return mapped;
   }
 
   switch (normalizedType) {

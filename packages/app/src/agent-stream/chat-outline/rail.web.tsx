@@ -1,37 +1,42 @@
+import { useTranslation } from "react-i18next";
 import { memo, useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Pressable, Text, View, type PointerEvent as RNPointerEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useReducedMotion } from "react-native-reanimated";
-import { useContainerWidthBelow } from "@/hooks/use-container-width";
+import { useContainerWidth } from "@/hooks/use-container-width";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { createChatOutlineHoverIntent } from "./hover-intent";
-import { promptTickMagnification } from "./model";
+import { usePointerCapabilities } from "@/hooks/pointer-capabilities";
+import { promptTickMagnification, resolveChatOutlineLayout } from "./model";
 import type { ChatOutlineRailProps } from "./rail";
 
 // Hover tracking lives on the rail and the slots, never on the Pressable inside them:
 // magnifying a slot must not move the box the pointer is resting on. See docs/hover.md.
-const RAIL_WIDTH = 36;
 const SLOT_HEIGHT = 8;
-const MIN_PANEL_WIDTH = 918;
 const RESTING_PILL_HEIGHT = 2;
 const MAGNIFIED_PILL_HEIGHT = 4;
 const RESTING_PILL_WIDTH = 10;
 const ACTIVE_PILL_WIDTH = 18;
 const MAGNIFIED_PILL_WIDTH = 26;
-const PREVIEW_WIDTH = 260;
-const PREVIEW_HEIGHT = 48;
 const PREVIEW_GAP = 4;
+const RAIL_DATASET = { "paseo-pane-focus-exempt": "true" };
 
 export const ChatOutlineRail = memo(function ChatOutlineRail({
   prompts,
+  contentMaxWidth,
+  replyPreviews,
   activePrompt,
   onJumpToPrompt,
 }: ChatOutlineRailProps) {
+  const { t } = useTranslation();
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
   const activeSeq = useSyncExternalStore(activePrompt.subscribe, activePrompt.getActiveSeq);
   const prefersReducedMotion = useReducedMotion();
-  const { onLayout, isBelow: isPanelNarrow } = useContainerWidthBelow(MIN_PANEL_WIDTH);
+  const { onLayout, width } = useContainerWidth();
+  const { finePointer } = usePointerCapabilities();
+  const layout = resolveChatOutlineLayout(width, contentMaxWidth);
+  const showRail = layout.hitWidth > 0 && (layout.persistent || finePointer);
 
   const hoverIntent = useMemo(
     () =>
@@ -61,8 +66,8 @@ export const ChatOutlineRail = memo(function ChatOutlineRail({
   const handlePointerLeaveRail = useCallback(() => hoverIntent.leave(), [hoverIntent]);
   useEffect(() => () => hoverIntent.dispose(), [hoverIntent]);
   useEffect(() => {
-    if (isPanelNarrow) hoverIntent.leave();
-  }, [hoverIntent, isPanelNarrow]);
+    if (!showRail) hoverIntent.leave();
+  }, [hoverIntent, showRail]);
   const handleFocusChange = useCallback((index: number, focused: boolean) => {
     setFocusedIndex((current) => {
       if (focused) return index;
@@ -78,9 +83,16 @@ export const ChatOutlineRail = memo(function ChatOutlineRail({
 
   return (
     <View style={styles.panelMeasure} pointerEvents="box-none" onLayout={onLayout}>
-      {isPanelNarrow ? null : (
+      {!showRail ? null : (
         <View
-          style={styles.rail}
+          style={[
+            styles.rail,
+            inlineUnistylesStyle({
+              width: layout.hitWidth,
+              opacity: layout.persistent || attentionIndex !== null ? 1 : 0,
+            }),
+          ]}
+          dataSet={RAIL_DATASET}
           role="tablist"
           testID="chat-outline-rail"
           onPointerEnter={handlePointerEnterRail}
@@ -93,7 +105,17 @@ export const ChatOutlineRail = memo(function ChatOutlineRail({
               index={index}
               seq={prompt.seq}
               preview={prompt.preview}
-              label={`${index + 1} of ${prompts.length}: ${prompt.preview}`}
+              reply={replyPreviews.get(prompt.seq)?.text}
+              railWidth={layout.hitWidth}
+              previewWidth={layout.previewWidth}
+              alignAbove={index >= prompts.length / 2}
+              unloadedLabel={t("chatOutlinePreview.unloaded")}
+              hint={t("chatOutlinePreview.hint")}
+              label={t("chatOutlinePreview.position", {
+                position: index + 1,
+                count: prompts.length,
+                prompt: prompt.preview,
+              })}
               isActive={prompt.seq === activeSeq}
               hasAttention={index === attentionIndex}
               magnification={
@@ -116,6 +138,12 @@ interface ChatOutlineTickProps {
   index: number;
   seq: number;
   preview: string;
+  reply?: string;
+  railWidth: number;
+  previewWidth: number;
+  alignAbove: boolean;
+  unloadedLabel: string;
+  hint: string;
   label: string;
   isActive: boolean;
   hasAttention: boolean;
@@ -129,6 +157,12 @@ const ChatOutlineTick = memo(function ChatOutlineTick({
   index,
   seq,
   preview,
+  reply,
+  railWidth,
+  previewWidth,
+  alignAbove,
+  unloadedLabel,
+  hint,
   label,
   isActive,
   hasAttention,
@@ -174,10 +208,23 @@ const ChatOutlineTick = memo(function ChatOutlineTick({
         />
       </Pressable>
       {hasAttention ? (
-        <View style={styles.preview} pointerEvents="none" aria-hidden testID="chat-outline-preview">
-          <Text style={styles.previewText} numberOfLines={2}>
+        <View
+          style={[
+            styles.preview,
+            alignAbove ? styles.previewAbove : styles.previewBelow,
+            inlineUnistylesStyle({ left: railWidth + PREVIEW_GAP, width: previewWidth }),
+          ]}
+          pointerEvents="none"
+          aria-hidden
+          testID="chat-outline-preview"
+        >
+          <Text style={styles.previewText} numberOfLines={2} testID="chat-outline-question">
             {preview}
           </Text>
+          <Text style={styles.previewAnswer} numberOfLines={4} testID="chat-outline-answer">
+            {reply ?? unloadedLabel}
+          </Text>
+          <Text style={styles.previewHint}>{hint}</Text>
         </View>
       ) : null}
     </View>
@@ -191,10 +238,10 @@ const styles = StyleSheet.create((theme) => ({
   },
   rail: {
     position: "absolute",
-    left: theme.spacing[2],
+    left: theme.spacing[1],
     top: "10%",
     bottom: "10%",
-    width: RAIL_WIDTH,
+    width: "100%",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 2,
@@ -202,7 +249,7 @@ const styles = StyleSheet.create((theme) => ({
   // Slots tile the rail with no gaps, so every pixel of the column belongs to a prompt even
   // when a long conversation squeezes them well below their resting height.
   slot: {
-    width: RAIL_WIDTH,
+    width: "100%",
     flexBasis: SLOT_HEIGHT,
     flexShrink: 1,
     alignItems: "center",
@@ -222,25 +269,21 @@ const styles = StyleSheet.create((theme) => ({
   // without competing with the transcript. Attention is the only foreground state.
   pill: {
     borderRadius: theme.borderRadius.full,
-    backgroundColor: theme.colors.borderAccent,
+    backgroundColor: theme.colors.foregroundExtraMuted,
     transitionProperty: "width, height, background-color",
     transitionDuration: "140ms",
     transitionTimingFunction: "ease-out",
   },
   pillActive: {
-    backgroundColor: theme.colors.foregroundExtraMuted,
+    backgroundColor: theme.colors.foreground,
   },
   pillAttention: {
     backgroundColor: theme.colors.foreground,
   },
   preview: {
     position: "absolute",
-    left: RAIL_WIDTH + PREVIEW_GAP,
-    top: "50%",
-    marginTop: -PREVIEW_HEIGHT / 2,
-    width: PREVIEW_WIDTH,
-    height: PREVIEW_HEIGHT,
-    justifyContent: "center",
+    gap: theme.spacing[1],
+    paddingVertical: theme.spacing[2],
     paddingHorizontal: theme.spacing[3],
     borderRadius: theme.borderRadius.lg,
     borderWidth: theme.borderWidth[1],
@@ -248,7 +291,18 @@ const styles = StyleSheet.create((theme) => ({
     backgroundColor: theme.colors.surface2,
     ...theme.shadow.md,
   },
+  previewAbove: { bottom: 0 },
+  previewBelow: { top: 0 },
+  previewAnswer: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.foregroundMuted,
+  },
+  previewHint: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.foregroundMuted,
+  },
   previewText: {
+    fontWeight: theme.fontWeight.bold,
     fontSize: theme.fontSize.sm,
     color: theme.colors.foreground,
   },

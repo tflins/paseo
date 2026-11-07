@@ -13,6 +13,27 @@ import {
 describe("browser automation protocol integration", () => {
   const browserId = "11111111-1111-4111-8111-111111111111";
 
+  test("host registration accepts identified windows and legacy registrations", () => {
+    const registration = {
+      type: "browser.host.register.request",
+      requestId: "register-window",
+      hostKind: "desktop app",
+      supportedCommands: ["new_tab", "list_tabs"],
+    };
+    expect(SessionInboundMessageSchema.parse(registration)).toEqual(registration);
+    const identity = { hostId: "window-a", label: "Mac A / Window 1", localServerId: "server-a" };
+    expect(SessionInboundMessageSchema.parse({ ...registration, identity })).toEqual({
+      ...registration,
+      identity,
+    });
+    expect(
+      SessionInboundMessageSchema.safeParse({
+        ...registration,
+        identity: { ...identity, hostId: "" },
+      }).success,
+    ).toBe(false);
+  });
+
   test("browser host capability parses supported commands in hello", () => {
     expect(
       WSHelloMessageSchema.parse({

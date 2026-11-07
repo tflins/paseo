@@ -6,7 +6,7 @@ import type {
   BrowserAutomationExecuteResponse,
 } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import { BROWSER_AUTOMATION_COMMAND_NAMES } from "@getpaseo/protocol/browser-automation/rpc-schemas";
-import { BrowserToolsBroker, type BrowserHostClient } from "./broker.js";
+import { BrowserToolsBroker, type BrowserHostClient, type BrowserHostBindings } from "./broker.js";
 
 const BROWSER_ID = "11111111-1111-4111-8111-111111111111";
 const SECOND_BROWSER_ID = "22222222-2222-4222-8222-222222222222";
@@ -15,16 +15,24 @@ class FakeBrowserHostClient implements BrowserHostClient {
   public readonly receivedRequests: BrowserAutomationExecuteRequest[] = [];
   public readonly hostKind: string;
   public readonly supportedCommands: readonly BrowserAutomationCommandName[];
+  public readonly identity: { hostId: string; label: string; localServerId: string };
 
   public constructor(
     public readonly id: string,
     options: {
       hostKind?: string;
       supportedCommands?: readonly BrowserAutomationCommandName[];
+      localServerId?: string;
+      hostId?: string;
     } = {},
   ) {
     this.hostKind = options.hostKind ?? "desktop app";
     this.supportedCommands = options.supportedCommands ?? [...BROWSER_AUTOMATION_COMMAND_NAMES];
+    this.identity = {
+      hostId: options.hostId ?? id,
+      label: id,
+      localServerId: options.localServerId ?? "local-server",
+    };
   }
 
   public sendBrowserAutomationRequest(request: BrowserAutomationExecuteRequest): void {
@@ -64,8 +72,18 @@ class FailingBrowserHostClient implements BrowserHostClient {
   }
 }
 
-function createBroker(options: { timeoutMs?: number } = {}): BrowserToolsBroker {
+function createBroker(
+  options: { timeoutMs?: number; bindings?: BrowserHostBindings } = {},
+): BrowserToolsBroker {
+  const bindings = new Map<string, string>();
   return new BrowserToolsBroker({
+    bindings: options.bindings ?? {
+      getBrowserHostId: async (id) => bindings.get(id) ?? null,
+      setBrowserHostId: async (id, hostId) => {
+        bindings.set(id, hostId);
+      },
+    },
+    serverId: "local-server",
     defaultTimeoutMs: options.timeoutMs ?? 100,
     createRequestId: () => "req-1",
   });
@@ -170,6 +188,8 @@ describe("BrowserToolsBroker", () => {
             title: "Example",
             isActive: false,
             isLoading: false,
+            hostId: "host-1",
+            hostLabel: "host-1",
           },
         ],
       },
@@ -229,18 +249,19 @@ describe("BrowserToolsBroker", () => {
     });
   });
 
-  test("new tabs target the most recently registered host and tab commands stay with that host", async () => {
+  test("new tabs stay on the daemon machine even when a remote host registers last", async () => {
     const broker = createBroker();
-    const firstHost = new FakeBrowserHostClient("host-1");
+    const firstHost = new FakeBrowserHostClient("host-1", { localServerId: "remote-server" });
     const recentHost = new FakeBrowserHostClient("host-2");
-    broker.registerClient(firstHost);
     broker.registerClient(recentHost);
+    broker.registerClient(firstHost);
 
     const newTabPromise = broker.execute({
       command: { command: "new_tab", args: { url: "https://example.com" } },
       workspaceId: "workspace-1",
     });
 
+    await vi.waitFor(() => expect(recentHost.receivedRequests).toHaveLength(1));
     expect(firstHost.receivedRequests).toEqual([]);
     expect(recentHost.receivedRequests).toEqual([
       {
@@ -300,6 +321,186 @@ describe("BrowserToolsBroker", () => {
       ok: true,
       result: { command: "snapshot", browserId: BROWSER_ID },
     });
+  });
+
+  test("multiple local windows require selection without sending any command", async () => {
+    const broker = createBroker();
+    const first = new FakeBrowserHostClient("first");
+    const second = new FakeBrowserHostClient("second");
+    broker.registerClient(first);
+    broker.registerClient(second);
+    const result = await broker.execute({
+      agentId: "agent-1",
+      command: { command: "new_tab", args: {} },
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "browser_no_host", retryable: false },
+    });
+    expect(first.receivedRequests).toEqual([]);
+    expect(second.receivedRequests).toEqual([]);
+  });
+
+  test("a single remote host is never an implicit target", async () => {
+    const broker = createBroker();
+    const remote = new FakeBrowserHostClient("remote", { localServerId: "other-server" });
+    broker.registerClient(remote);
+    const result = await broker.execute({
+      agentId: "agent-1",
+      command: { command: "new_tab", args: {} },
+    });
+    expect(result).toMatchObject({ ok: false, error: { code: "browser_no_host" } });
+    expect(remote.receivedRequests).toEqual([]);
+  });
+
+  test("a disconnected selected window never falls back to the remaining window", async () => {
+    const broker = createBroker();
+    const selected = new FakeBrowserHostClient("selected");
+    const other = new FakeBrowserHostClient("other");
+    const disconnect = broker.registerClient(selected);
+    broker.registerClient(other);
+    await broker.selectHost("agent-1", "selected");
+    disconnect();
+    const result = await broker.execute({
+      agentId: "agent-1",
+      command: { command: "new_tab", args: {} },
+    });
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "browser_no_host", retryable: true },
+    });
+    expect(other.receivedRequests).toEqual([]);
+  });
+
+  test("explicit selection can route new tabs to a remote window after reconnect", async () => {
+    const broker = createBroker();
+    const disconnect = broker.registerClient(
+      new FakeBrowserHostClient("connection-1", { hostId: "window-1", localServerId: "remote" }),
+    );
+    await broker.selectHost("agent-1", "window-1");
+    disconnect();
+    const reconnected = new FakeBrowserHostClient("connection-2", {
+      hostId: "window-1",
+      localServerId: "remote",
+    });
+    broker.registerClient(reconnected);
+    const local = new FakeBrowserHostClient("local");
+    broker.registerClient(local);
+    const pending = broker.execute({
+      agentId: "agent-1",
+      command: { command: "new_tab", args: {} },
+    });
+    await vi.waitFor(() => expect(reconnected.receivedRequests).toHaveLength(1));
+    reconnected.resolveLatestWith(broker, {
+      requestId: "req-1",
+      ok: true,
+      result: {
+        command: "new_tab",
+        browserId: BROWSER_ID,
+        workspaceId: "workspace-1",
+        url: "https://example.com",
+      },
+    });
+    expect(await pending).toMatchObject({ ok: true });
+    expect(local.receivedRequests).toEqual([]);
+  });
+
+  test("creation selects only a local browser window owned by the requesting source", () => {
+    const broker = createBroker();
+    broker.registerClient(new FakeBrowserHostClient("source-a", { hostId: "window-a" }));
+    broker.registerClient(new FakeBrowserHostClient("source-b", { hostId: "window-b" }));
+    broker.registerClient(new FakeBrowserHostClient("source-c", { localServerId: "remote" }));
+    expect(broker.getLocalHostForClients(["source-a"])).toBe("window-a");
+    expect(broker.getLocalHostForClients(["source-b"])).toBe("window-b");
+    expect(broker.getLocalHostForClients(["source-c"])).toBeNull();
+    expect(broker.getLocalHostForClients(["source-a", "source-b"])).toBeNull();
+  });
+
+  test("legacy hosts require identification before automatic new tab routing", async () => {
+    const broker = createBroker();
+    broker.registerClient(new FailingBrowserHostClient());
+    expect(await broker.execute({ command: { command: "new_tab", args: {} } })).toMatchObject({
+      ok: false,
+      error: { code: "browser_no_host", retryable: false },
+    });
+  });
+
+  test("binding write failure prevents creating a tab", async () => {
+    const broker = createBroker({
+      bindings: {
+        getBrowserHostId: async () => null,
+        setBrowserHostId: async () => {
+          throw new Error("Disk full");
+        },
+      },
+    });
+    const host = new FakeBrowserHostClient("window-a");
+    broker.registerClient(host);
+    await expect(
+      broker.execute({ agentId: "agent-a", command: { command: "new_tab", args: {} } }),
+    ).rejects.toThrow("Disk full");
+    expect(host.receivedRequests).toEqual([]);
+  });
+
+  test("concurrent first calls retain the same binding when another window connects during persistence", async () => {
+    let boundHostId: string | null = null;
+    let writes = 0;
+    let finishWrite: () => void = () => {};
+    const writeGate = new Promise<void>((resolve) => {
+      finishWrite = resolve;
+    });
+    const broker = createBroker({
+      bindings: {
+        getBrowserHostId: async () => boundHostId,
+        setBrowserHostId: async (_agentId, hostId) => {
+          writes += 1;
+          await writeGate;
+          boundHostId = hostId;
+        },
+      },
+    });
+    const selected = new FakeBrowserHostClient("selected");
+    broker.registerClient(selected);
+    const first = broker.execute({
+      agentId: "agent-a",
+      requestId: "first",
+      command: { command: "new_tab", args: {} },
+    });
+    const second = broker.execute({
+      agentId: "agent-a",
+      requestId: "second",
+      command: { command: "new_tab", args: {} },
+    });
+    await vi.waitFor(() => expect(writes).toBe(1));
+    const other = new FakeBrowserHostClient("other");
+    broker.registerClient(other);
+    finishWrite();
+    await vi.waitFor(() => expect(selected.receivedRequests).toHaveLength(2));
+    for (const [index, request] of selected.receivedRequests.entries()) {
+      selected.resolveRequestWith(broker, request, {
+        requestId: request.requestId,
+        ok: true,
+        result: {
+          command: "new_tab",
+          browserId: index === 0 ? BROWSER_ID : SECOND_BROWSER_ID,
+          workspaceId: "workspace-a",
+          url: "https://example.com",
+        },
+      });
+    }
+    expect(await first).toMatchObject({ ok: true, result: { hostId: "selected" } });
+    expect(await second).toMatchObject({ ok: true, result: { hostId: "selected" } });
+    expect(other.receivedRequests).toEqual([]);
+    expect(writes).toBe(1);
+  });
+
+  test("duplicate window registrations cannot replace a live owner", () => {
+    const broker = createBroker();
+    broker.registerClient(new FakeBrowserHostClient("connection-1", { hostId: "window-1" }));
+    expect(() =>
+      broker.registerClient(new FakeBrowserHostClient("connection-2", { hostId: "window-1" })),
+    ).toThrow("already has an active host registration");
+    expect(broker.getRegisteredClientCount()).toBe(1);
   });
 
   test("list tabs aggregates all hosts and seeds browser id affinity", async () => {
@@ -375,6 +576,8 @@ describe("BrowserToolsBroker", () => {
             title: "One",
             isActive: false,
             isLoading: false,
+            hostId: "host-1",
+            hostLabel: "host-1",
           },
           {
             browserId: SECOND_BROWSER_ID,
@@ -383,6 +586,8 @@ describe("BrowserToolsBroker", () => {
             title: "Two",
             isActive: false,
             isLoading: false,
+            hostId: "host-2",
+            hostLabel: "host-2",
           },
         ],
       },
@@ -474,12 +679,13 @@ describe("BrowserToolsBroker", () => {
       : never;
   }>)("routes $name to the host that owns the browser id", async ({ command, result }) => {
     const broker = createBroker();
-    const other = new FakeBrowserHostClient("host-1");
+    const other = new FakeBrowserHostClient("host-1", { localServerId: "remote-server" });
     const owner = new FakeBrowserHostClient("host-2");
     broker.registerClient(other);
     broker.registerClient(owner);
 
     const newTabPromise = broker.execute({ command: { command: "new_tab", args: {} } });
+    await vi.waitFor(() => expect(owner.receivedRequests).toHaveLength(1));
     owner.resolveLatestWith(broker, {
       requestId: "req-1",
       ok: true,
@@ -516,12 +722,13 @@ describe("BrowserToolsBroker", () => {
 
   test("successful close_tab clears browser id host affinity", async () => {
     const broker = createBroker();
-    const other = new FakeBrowserHostClient("host-1");
+    const other = new FakeBrowserHostClient("host-1", { localServerId: "remote-server" });
     const owner = new FakeBrowserHostClient("host-2");
     broker.registerClient(other);
     broker.registerClient(owner);
 
     const newTabPromise = broker.execute({ command: { command: "new_tab", args: {} } });
+    await vi.waitFor(() => expect(owner.receivedRequests).toHaveLength(1));
     owner.resolveLatestWith(broker, {
       requestId: "req-1",
       ok: true,
@@ -692,6 +899,7 @@ describe("BrowserToolsBroker", () => {
       command: { command: "new_tab", args: {} },
       workspaceId: "workspace-1",
     });
+    await vi.waitFor(() => expect(owner.receivedRequests).toHaveLength(1));
     owner.resolveLatestWith(broker, {
       requestId: "req-1",
       ok: true,
@@ -734,6 +942,7 @@ describe("BrowserToolsBroker", () => {
       command: { command: "new_tab", args: {} },
       workspaceId: "workspace-1",
     });
+    await vi.waitFor(() => expect(owner.receivedRequests).toHaveLength(1));
     owner.resolveLatestWith(broker, {
       requestId: "req-1",
       ok: true,
@@ -747,7 +956,7 @@ describe("BrowserToolsBroker", () => {
     await newTabPromise;
 
     unregisterOwner();
-    const reconnectedOwner = new FakeBrowserHostClient("host-1");
+    const reconnectedOwner = new FakeBrowserHostClient("new-connection", { hostId: "host-1" });
     broker.registerClient(reconnectedOwner);
 
     const snapshotPromise = broker.execute({

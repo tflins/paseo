@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import type { BrowserToolsBroker, BrowserToolsExecuteInput } from "./broker.js";
+import type { BrowserToolsExecuteInput } from "./broker.js";
 import type { BrowserToolsResponsePayload } from "./errors.js";
 import { registerBrowserTools, type RegisterBrowserToolsOptions } from "./tools.js";
 import type {
@@ -23,6 +23,22 @@ interface RegisteredTool {
 }
 
 class FakeBrowserBroker {
+  public readonly selections: Array<{ agentId: string; hostId: string }> = [];
+  public listHosts() {
+    return [
+      {
+        hostId: "host-1",
+        label: "Local window",
+        hostKind: "desktop app",
+        isLocal: true,
+        supportedCommands: ["new_tab" as const],
+      },
+    ];
+  }
+  public async selectHost(agentId: string, hostId: string) {
+    this.selections.push({ agentId, hostId });
+    return this.listHosts()[0];
+  }
   public readonly calls: BrowserToolsExecuteInput[] = [];
 
   public constructor(private response: BrowserToolsResponsePayload = listTabsPayload()) {}
@@ -53,7 +69,7 @@ class BrowserToolHarness {
       registerTool: (name, config, handler) => {
         this.tools.set(name, { config, handler });
       },
-      broker: this.broker as Pick<BrowserToolsBroker, "execute">,
+      broker: this.broker,
       ...(this.callerAgentId ? { callerAgentId: this.callerAgentId } : {}),
       resolveCallerAgent: () => this.callerAgent,
     });
@@ -538,6 +554,8 @@ describe("registerBrowserTools", () => {
     const harness = new BrowserToolHarness();
 
     expect(harness.toolNames()).toEqual([
+      "browser_list_hosts",
+      "browser_select_host",
       "browser_list_tabs",
       "browser_new_tab",
       "browser_snapshot",
@@ -560,6 +578,25 @@ describe("registerBrowserTools", () => {
       "browser_scroll",
       "browser_resize",
       "browser_close_tab",
+    ]);
+  });
+
+  test("host selection binds only the calling agent", async () => {
+    const harness = new BrowserToolHarness();
+    const result = await harness.execute("browser_select_host", {
+      hostId: "host-1",
+      agentId: "another-agent",
+    });
+    expect(harness.broker.selections).toEqual([{ agentId: "agent-1", hostId: "host-1" }]);
+    expect(result.structuredContent).toMatchObject({ ok: true, host: { hostId: "host-1" } });
+  });
+
+  test("host inventory comes from the broker", async () => {
+    const harness = new BrowserToolHarness();
+    const result = await harness.execute("browser_list_hosts", {});
+    expect(result.structuredContent).toEqual({ ok: true, hosts: harness.broker.listHosts() });
+    expect(result.content).toEqual([
+      { type: "text", text: JSON.stringify(result.structuredContent) },
     ]);
   });
 

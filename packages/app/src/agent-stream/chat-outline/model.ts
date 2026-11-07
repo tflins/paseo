@@ -1,3 +1,4 @@
+import type { StreamItem } from "@/types/stream";
 import type { AgentTimelinePromptIndexPayload } from "@getpaseo/client/internal/daemon-client";
 
 export type ChatOutlinePrompt = AgentTimelinePromptIndexPayload["prompts"][number];
@@ -37,14 +38,14 @@ export function resolveActivePromptSeq(
   if (anchorSeq === null) {
     return null;
   }
-  let activeSeq: number | null = null;
-  for (const prompt of prompts) {
-    if (prompt.seq > anchorSeq) {
-      break;
-    }
-    activeSeq = prompt.seq;
+  let low = 0;
+  let high = prompts.length;
+  while (low < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (prompts[middle]!.seq <= anchorSeq) low = middle + 1;
+    else high = middle;
   }
-  return activeSeq;
+  return prompts[low - 1]?.seq ?? null;
 }
 
 export interface ActivePromptSource {
@@ -81,5 +82,53 @@ export function createActivePromptPublisher(): ActivePromptPublisher {
         listener();
       }
     },
+  };
+}
+
+export interface ChatOutlineReplyPreview {
+  seq: number;
+  text: string;
+}
+
+/** Only loaded assistant text is eligible; an index entry does not imply a loaded answer. */
+export function buildChatOutlineReplyPreviews(input: {
+  prompts: readonly ChatOutlinePrompt[];
+  items: readonly StreamItem[];
+  epoch: string | null;
+  previous?: ReadonlyMap<number, ChatOutlineReplyPreview>;
+}): ReadonlyMap<number, ChatOutlineReplyPreview> {
+  const replies = new Map(input.previous);
+  for (const item of input.items) {
+    if (item.kind !== "assistant_message" || !item.timelineCursor) continue;
+    const { epoch, seq } = item.timelineCursor;
+    if (epoch !== input.epoch) continue;
+    const promptSeq = resolveActivePromptSeq(input.prompts, seq);
+    if (promptSeq === null) continue;
+    const previous = replies.get(promptSeq);
+    if (previous && previous.seq > seq) continue;
+    const text = item.text.slice(0, 2048).replace(/\s+/gu, " ").trim();
+    if (!text) continue;
+    replies.set(promptSeq, { seq, text: text.length > 360 ? `${text.slice(0, 360)}…` : text });
+  }
+  return replies;
+}
+
+/** Reserve only the transcript's side gutter; narrow panels reveal the rail on intent. */
+export function resolveChatOutlineLayout(panelWidth: number, contentMaxWidth: number) {
+  if (
+    !Number.isFinite(panelWidth) ||
+    panelWidth <= 0 ||
+    !Number.isFinite(contentMaxWidth) ||
+    contentMaxWidth <= 0
+  ) {
+    return { hitWidth: 0, persistent: false, previewWidth: 0 };
+  }
+  // The transcript always reserves at least 12 px of outer horizontal padding.
+  const gutter = Math.max(12, (panelWidth - contentMaxWidth) / 2);
+  const hitWidth = Math.min(36, Math.max(0, Math.floor(gutter) - 4));
+  return {
+    hitWidth,
+    persistent: gutter >= 44,
+    previewWidth: Math.min(300, Math.max(0, panelWidth - hitWidth - 16)),
   };
 }

@@ -2130,7 +2130,13 @@ export const ko: TranslationResources = {
     showMore: "더 보기",
     showLess: "접기",
   },
+  chatOutlinePreview: {
+    unloaded: "로드된 답변이 없습니다. 눈금을 클릭해 기록을 여세요.",
+    hint: "클릭하여 이동 · 전체 대화 색인",
+    position: "{{position}} / {{count}}: {{prompt}}",
+  },
   toolCallGroup: {
+    sources: "{{sources}} 사용",
     thought: "생각함",
     editedFiles: {
       one: "{{count}} 파일을 편집했습니다.",

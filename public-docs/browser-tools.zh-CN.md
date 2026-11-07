@@ -10,6 +10,7 @@ nav: 工具参考
 
 通用概念：
 
+- **`hostId`** 标识一个已连接的桌面窗口。通过 `browser_list_hosts` 获取，再用 `browser_select_host` 为当前 Agent 后续的新标签页绑定该窗口。对于可识别的宿主，`browser_new_tab` 和 `browser_list_tabs` 会返回 `hostId` 和 `hostLabel`。详见[宿主选择规则](/docs/browser#desktop-only-for-now)。
 - **`browserId`** 标识一个标签页。它来自 `browser_new_tab` 或 `browser_list_tabs`，所有针对标签页的工具都需要它。
 - **`ref`** 标识一个元素，例如 `@e3`。引用来自同一标签页最新的 `browser_snapshot`，页面变化后会失效；过期的引用会返回错误，而不是作用到错误的元素上。
 - 每个结果都会报告命令执行期间页面打开的**对话框**（alert 会被接受；confirm/prompt/beforeunload 会被取消）。
@@ -18,12 +19,14 @@ nav: 工具参考
 
 ## 标签页 {#tabs}
 
-| 工具                | 参数                       | 用途                                              |
-| ------------------- | -------------------------- | ------------------------------------------------- |
-| `browser_list_tabs` | —                          | 列出 Agent 工作区在所有已连接宿主上打开的标签页。 |
-| `browser_new_tab`   | `url?`                     | 在后台打开一个标签页并返回它的 `browserId`。      |
-| `browser_close_tab` | `browserId`                | 关闭标签页并清理它的 webview。                    |
-| `browser_resize`    | `browserId, width, height` | 调整标签页视口大小，用手机或平板的尺寸检查布局。  |
+| 工具                  | 参数                       | 用途                                                    |
+| --------------------- | -------------------------- | ------------------------------------------------------- |
+| `browser_list_hosts`  | —                          | 列出已连接的窗口及其是否位于 daemon 所在机器。          |
+| `browser_select_host` | `hostId`                   | 为当前 Agent 的新标签页绑定窗口；已有标签页保留原宿主。 |
+| `browser_list_tabs`   | —                          | 列出 Agent 工作区在所有已连接宿主上打开的标签页。       |
+| `browser_new_tab`     | `url?`                     | 在后台打开一个标签页并返回它的 `browserId`。            |
+| `browser_close_tab`   | `browserId`                | 关闭标签页并清理它的 webview。                          |
+| `browser_resize`      | `browserId, width, height` | 调整标签页视口大小，用手机或平板的尺寸检查布局。        |
 
 ## 读取页面 {#reading-the-page}
 
@@ -67,10 +70,10 @@ nav: 工具参考
 
 工具会返回结构化的错误，而不是静默失败。Agent 最常遇到的错误：
 
-| 错误码              | 含义                                                            |
-| ------------------- | --------------------------------------------------------------- |
-| `browser_disabled`  | 该主机上的浏览器工具已关闭。                                    |
-| `browser_no_host`   | 没有已连接的浏览器宿主（桌面应用）。可以重试。                  |
-| `browser_stale_ref` | 引用与页面不再匹配，请重新获取快照。                            |
-| `browser_timeout`   | 元素始终无法操作，或等待条件始终未满足。                        |
-| `browser_denied`    | 不允许该操作，例如非 `http(s)` 的 URL，或没有可导航的历史记录。 |
+| 错误码              | 含义                                                                         |
+| ------------------- | ---------------------------------------------------------------------------- |
+| `browser_disabled`  | 该主机上的浏览器工具已关闭。                                                 |
+| `browser_no_host`   | 选定窗口不可用，或需要选择宿主。按错误提示重新连接、选择宿主或更新 Desktop。 |
+| `browser_stale_ref` | 引用与页面不再匹配，请重新获取快照。                                         |
+| `browser_timeout`   | 元素始终无法操作，或等待条件始终未满足。                                     |
+| `browser_denied`    | 不允许该操作，例如非 `http(s)` 的 URL，或没有可导航的历史记录。              |

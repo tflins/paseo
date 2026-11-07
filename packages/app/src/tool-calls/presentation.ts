@@ -1,3 +1,7 @@
+import {
+  getExternalToolPresentation,
+  type ExternalToolPresentation,
+} from "@getpaseo/protocol/external-tool-presentation";
 import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import { buildAgentMessageDisplay } from "@getpaseo/protocol/paseo-tool-presentation/index";
 import type { PlanOutcome } from "@/components/plan-card";
@@ -44,6 +48,7 @@ export type ToolCallIconResolver = (
   toolName: string,
   detail: ToolCallDetail | undefined,
   agentMessage: AgentMessage | undefined,
+  external?: ExternalToolPresentation,
 ) => ToolCallPresentationIcon;
 
 function displayStatus(status: ToolCallStatus): ToolCallDisplayInput["status"] {
@@ -83,7 +88,16 @@ export function buildToolCallPresentation(
     displayName: displayModel.displayName,
     summary: displayModel.summary,
     errorText: displayModel.errorText,
-    icon: input.resolveIcon(input.toolName, detail, input.agentMessage),
+    icon: input.resolveIcon(
+      input.toolName,
+      detail,
+      input.agentMessage,
+      getExternalToolPresentation({
+        name: input.toolName,
+        detail: detailForDisplay,
+        metadata: input.metadata,
+      }),
+    ),
     isLoadingDetails,
     hasDetails,
     canOpenDetails: hasDetails || isLoadingDetails,

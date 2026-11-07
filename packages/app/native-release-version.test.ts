@@ -7,6 +7,15 @@ const {
 } = require("./native-release-version");
 
 describe("native release version", () => {
+  it("derives the native version for a fork desktop renderer build", () => {
+    expect(getNativeReleaseVersion("0.15.2-tflins.1")).toEqual({
+      appVersion: "0.15.2",
+      androidVersionCode: 15002,
+      iosBuildNumber: "15002001",
+    });
+    expect(() => getNativeReleaseVersion("0.15.2-tflins.999")).toThrow();
+  });
+
   it("reserves the final iOS build slot for a stable release", () => {
     expect(getNativeReleaseVersion("0.2.6")).toEqual({
       appVersion: "0.2.6",

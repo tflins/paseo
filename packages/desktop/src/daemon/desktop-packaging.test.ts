@@ -63,6 +63,15 @@ function createFakeMacBundle(options: { includeHelper: boolean }): {
 }
 
 describe("desktop packaging", () => {
+  it("keeps desktop updates on the fork while preserving the installed app identity", () => {
+    const config = readFileSync(join(packageRoot, "electron-builder.yml"), "utf8");
+    expect(config).toMatch(/publish:\s+provider: github\s+owner: tflins\s+repo: paseo/);
+    expect(config).toMatch(/^  channel: latest$/m);
+    expect(config).toMatch(/^  releaseType: release$/m);
+    expect(config).toMatch(/^appId: sh\.paseo\.desktop$/m);
+    expect(config).toMatch(/^productName: Paseo$/m);
+  });
+
   it("uses an Electron runtime whose Squirrel handoff explicitly wakes ShipIt", () => {
     const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as {
       devDependencies?: Record<string, string>;

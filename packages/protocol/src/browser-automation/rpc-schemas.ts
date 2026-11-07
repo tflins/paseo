@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+export const BrowserHostIdentitySchema = z.object({
+  hostId: z.string().min(1),
+  label: z.string().min(1),
+  localServerId: z.string().min(1).nullable(),
+});
+
+export type BrowserHostIdentity = z.infer<typeof BrowserHostIdentitySchema>;
+
 export const BrowserAutomationErrorCodeSchema = z.enum([
   "browser_disabled",
   "browser_no_host",
@@ -258,6 +266,8 @@ export const BrowserAutomationCommandSchema = z.discriminatedUnion("command", [
 
 export const BrowserAutomationTabInfoSchema = z.object({
   browserId: BrowserAutomationBrowserIdSchema,
+  hostId: z.string().optional(),
+  hostLabel: z.string().optional(),
   workspaceId: z.string().min(1).optional(),
   url: z.string(),
   title: z.string(),
@@ -274,6 +284,8 @@ export const BrowserAutomationListTabsResultSchema = z.object({
 
 export const BrowserAutomationNewTabResultSchema = z.object({
   command: z.literal("new_tab"),
+  hostId: z.string().optional(),
+  hostLabel: z.string().optional(),
   browserId: BrowserAutomationBrowserIdSchema,
   workspaceId: z.string().min(1),
   url: z.string().min(1),

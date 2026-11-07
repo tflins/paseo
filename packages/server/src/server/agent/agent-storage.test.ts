@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from "vitest";
+import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
 import os from "node:os";
 import path from "node:path";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
@@ -290,6 +290,48 @@ describe("AgentStorage", () => {
     const [persisted] = await reloaded.listAll();
     expect(persisted.cwd).toBe("/tmp/project");
     expect(persisted.config?.providerOptions).toEqual({ allowedTools: ["Read"] });
+  });
+
+  test("browser host bindings survive snapshots, metadata writes, and storage reload", async () => {
+    const agent = createManagedAgent({ id: "browser-agent" });
+    await storage.applySnapshot(agent);
+    const beforeBinding = await storage.get(agent.id);
+    expect(beforeBinding).not.toBeNull();
+    await storage.setBrowserHostId(agent.id, "window-a");
+    await storage.applySnapshot(agent);
+    if (!beforeBinding) throw new Error("Expected stored agent");
+    await storage.upsert({ ...beforeBinding, title: "Updated title" });
+
+    const reloaded = new AgentStorage(storagePath, createTestLogger());
+    expect(await reloaded.getBrowserHostId(agent.id)).toBe("window-a");
+    await reloaded.setBrowserHostId(agent.id, "window-b");
+    expect(await reloaded.getBrowserHostId(agent.id)).toBe("window-b");
+  });
+
+  test("browser host selection rejects missing and deleted agents", async () => {
+    await expect(storage.setBrowserHostId("missing", "window-a")).rejects.toThrow("not found");
+    const agent = createManagedAgent({ id: "deleted-browser-agent" });
+    await storage.applySnapshot(agent);
+    storage.beginDelete(agent.id);
+    await expect(storage.setBrowserHostId(agent.id, "window-a")).rejects.toThrow("being deleted");
+  });
+
+  test("browser host selection rejects deletion while its write is queued", async () => {
+    const agent = createManagedAgent({ id: "deleting-browser-agent" });
+    await storage.applySnapshot(agent);
+    let release = () => {};
+    const previous = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { pendingWrites } = storage as unknown as { pendingWrites: Map<string, Promise<void>> };
+    pendingWrites.set(agent.id, previous);
+    const selection = storage.setBrowserHostId(agent.id, "window-a");
+    const rejected = expect(selection).rejects.toThrow("being deleted");
+    await vi.waitFor(() => expect(pendingWrites.get(agent.id)).not.toBe(previous));
+    storage.beginDelete(agent.id);
+    release();
+    await rejected;
+    expect(await storage.getBrowserHostId(agent.id)).toBeNull();
   });
 
   test("applySnapshot stores and reloads featureValues when present", async () => {

@@ -47,6 +47,7 @@ const STORED_AGENT_SCHEMA = z.object({
   provider: z.string(),
   cwd: z.string(),
   workspaceId: z.string().optional(),
+  browserHostId: z.string().min(1).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
   lastActivityAt: z.string().optional(),
@@ -271,7 +272,28 @@ export class AgentStorage {
   }
 
   private queueRecordWrite(record: StoredAgentRecord): Promise<void> {
-    return this.queueRecordMutation(record.id, () => record);
+    return this.queueRecordMutation(record.id, (existing) => ({
+      ...record,
+      ...(existing?.browserHostId ? { browserHostId: existing.browserHostId } : {}),
+    }));
+  }
+
+  async getBrowserHostId(agentId: string): Promise<string | null> {
+    await this.load();
+    await this.waitForPendingWrite(agentId);
+    const record = this.cache.get(agentId);
+    if (!record) throw new Error(`Agent ${agentId} not found`);
+    return record.browserHostId ?? null;
+  }
+
+  async setBrowserHostId(agentId: string, hostId: string): Promise<void> {
+    await this.load();
+    if (this.deleting.has(agentId)) throw new Error(`Agent ${agentId} is being deleted`);
+    await this.queueRecordMutation(agentId, (existing) => {
+      if (!existing) throw new Error(`Agent ${agentId} not found`);
+      return { ...existing, browserHostId: hostId };
+    });
+    if (this.deleting.has(agentId)) throw new Error(`Agent ${agentId} is being deleted`);
   }
 
   private queueRecordMutation(
@@ -384,6 +406,7 @@ export class AgentStorage {
       }
       // Background is fixed at creation; a runtime opened without it cannot clear it.
       if (existing?.background) record.background = true;
+      record.browserHostId = existing?.browserHostId;
       record.resumeOnStartup =
         existing?.resumeOnStartup && agent.lifecycle !== "idle" && agent.lifecycle !== "error";
       return record;

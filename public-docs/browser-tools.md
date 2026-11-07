@@ -12,6 +12,7 @@ The `browser_*` tools are injected into agents alongside the other [Paseo MCP to
 
 Shared concepts:
 
+- **`hostId`** identifies a connected desktop window. Get it from `browser_list_hosts`; `browser_select_host` remembers it for this agent's future new tabs. `browser_new_tab` and `browser_list_tabs` include `hostId` and `hostLabel` for identified hosts. See [host selection](/docs/browser#desktop-only-for-now).
 - **`browserId`** identifies a tab. It comes from `browser_new_tab` or `browser_list_tabs` and is required by every tab-scoped tool.
 - **`ref`** identifies an element, e.g. `@e3`. Refs come from the latest `browser_snapshot` of the same tab and expire when the page changes — stale refs return an error instead of acting on the wrong element.
 - Every result reports **dialogs** the page opened during the command (alerts accepted; confirm/prompt/beforeunload dismissed).
@@ -20,12 +21,14 @@ Arguments marked `?` are optional.
 
 ## Tabs
 
-| Tool                | Arguments                  | Purpose                                                                   |
-| ------------------- | -------------------------- | ------------------------------------------------------------------------- |
-| `browser_list_tabs` | —                          | List open tabs in the agent's workspace across connected hosts.           |
-| `browser_new_tab`   | `url?`                     | Open a tab in the background and return its `browserId`.                  |
-| `browser_close_tab` | `browserId`                | Close a tab and clean up its webview.                                     |
-| `browser_resize`    | `browserId, width, height` | Resize the tab's viewport — check a layout at phone or tablet dimensions. |
+| Tool                  | Arguments                  | Purpose                                                                      |
+| --------------------- | -------------------------- | ---------------------------------------------------------------------------- |
+| `browser_list_hosts`  | —                          | List connected windows, including whether each is on the daemon's machine.   |
+| `browser_select_host` | `hostId`                   | Remember a window for this agent's new tabs; existing tabs keep their hosts. |
+| `browser_list_tabs`   | —                          | List open tabs in the agent's workspace across connected hosts.              |
+| `browser_new_tab`     | `url?`                     | Open a tab in the background and return its `browserId`.                     |
+| `browser_close_tab`   | `browserId`                | Close a tab and clean up its webview.                                        |
+| `browser_resize`      | `browserId, width, height` | Resize the tab's viewport — check a layout at phone or tablet dimensions.    |
 
 ## Reading the page
 
@@ -69,10 +72,10 @@ Arguments marked `?` are optional.
 
 Tools return structured errors rather than failing silently. The ones agents see most:
 
-| Code                | Meaning                                                                         |
-| ------------------- | ------------------------------------------------------------------------------- |
-| `browser_disabled`  | Browser tools are turned off on this host.                                      |
-| `browser_no_host`   | No browser host (desktop app) is connected. Retryable.                          |
-| `browser_stale_ref` | The ref no longer matches the page — take a new snapshot.                       |
-| `browser_timeout`   | The element never became actionable, or the wait condition never held.          |
-| `browser_denied`    | The action isn't allowed — e.g. a non-`http(s)` URL, or no history to navigate. |
+| Code                | Meaning                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `browser_disabled`  | Browser tools are turned off on this host.                                                                                            |
+| `browser_no_host`   | The selected window is unavailable, or host selection is required. Follow the message to reconnect, select a host, or update Desktop. |
+| `browser_stale_ref` | The ref no longer matches the page — take a new snapshot.                                                                             |
+| `browser_timeout`   | The element never became actionable, or the wait condition never held.                                                                |
+| `browser_denied`    | The action isn't allowed — e.g. a non-`http(s)` URL, or no history to navigate.                                                       |

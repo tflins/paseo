@@ -376,6 +376,8 @@ export const PASEO_TOOL_CATALOG = {
 
   // Browser
   browser_list_tabs: browser("List browser tabs", "Listed browser tabs"),
+  browser_list_hosts: browser("List browser hosts", "Listed browser hosts"),
+  browser_select_host: browser("Select browser host", "Selected browser host", field("hostId")),
   browser_new_tab: browser("Open browser tab", "Opened browser tab", field("url")),
   browser_close_tab: browser("Close browser tab", "Closed browser tab", field("browserId")),
   browser_navigate: browser("Navigate", "Navigated", field("url")),

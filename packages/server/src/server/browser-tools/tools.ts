@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { BrowserAutomationBrowserIdSchema } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import type { BrowserToolsBroker } from "./broker.js";
-import type { BrowserToolsResponsePayload } from "./errors.js";
+import { BrowserToolsRequestError, type BrowserToolsResponsePayload } from "./errors.js";
 import type {
   PaseoToolConfig,
   PaseoToolExecutionContext,
@@ -24,7 +24,7 @@ export interface RegisterBrowserToolsOptions {
       context: PaseoToolExecutionContext,
     ) => Promise<PaseoToolResult>,
   ) => void;
-  broker: Pick<BrowserToolsBroker, "execute">;
+  broker: Pick<BrowserToolsBroker, "execute" | "listHosts" | "selectHost">;
   callerAgentId?: string;
   resolveCallerAgent: () => CallerAgentContext | null;
 }
@@ -65,6 +65,79 @@ const BrowserWaitInputSchema = z
 
 export function registerBrowserTools(options: RegisterBrowserToolsOptions): void {
   options.registerTool(
+    "browser_list_hosts",
+    {
+      title: "List browser hosts",
+      description:
+        "List connected browser windows that support explicit host selection. isLocal means the window runs on this agent's daemon machine. Use hostId with browser_select_host; an empty list may mean Paseo Desktop needs updating.",
+      inputSchema: {},
+    },
+    async () => {
+      const hosts = options.broker.listHosts().map((host) => ({
+        hostId: host.hostId,
+        label: host.label,
+        hostKind: host.hostKind,
+        isLocal: host.isLocal,
+        supportedCommands: [...host.supportedCommands],
+      }));
+      return {
+        content: [{ type: "text", text: JSON.stringify({ ok: true, hosts }) }],
+        structuredContent: { ok: true, hosts },
+      };
+    },
+  );
+
+  options.registerTool(
+    "browser_select_host",
+    {
+      title: "Select browser host",
+      description:
+        "Select and remember the browser window for this agent's future browser_new_tab calls. Use a hostId from browser_list_hosts. Selecting a remote window makes localhost refer to that window's machine. Existing tabs stay on their original hosts.",
+      inputSchema: { hostId: z.string().min(1) },
+    },
+    async ({ hostId }) => {
+      const context = resolveBrowserToolContext(options);
+      if (!context.agentId || !context.workspaceId) {
+        return browserToolResult({
+          payload: {
+            requestId: "browser-select-host",
+            ok: false,
+            error: {
+              code: "browser_unsupported",
+              message: "Selecting a browser host requires an agent in a Paseo workspace.",
+              retryable: false,
+            },
+          },
+          context,
+        });
+      }
+      try {
+        const host = await options.broker.selectHost(context.agentId, hostId);
+        return {
+          content: [
+            { type: "text", text: `New browser tabs for this agent will open in ${host.label}.` },
+          ],
+          structuredContent: {
+            ok: true,
+            host: { ...host, supportedCommands: [...host.supportedCommands] },
+            context,
+          },
+        };
+      } catch (error) {
+        if (!(error instanceof BrowserToolsRequestError)) throw error;
+        return browserToolResult({
+          payload: {
+            requestId: "browser-select-host",
+            ok: false,
+            error: { code: error.code, message: error.message, retryable: error.retryable },
+          },
+          context,
+        });
+      }
+    },
+  );
+
+  options.registerTool(
     "browser_list_tabs",
     {
       title: "List browser tabs",
@@ -96,7 +169,7 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
     {
       title: "Create browser tab",
       description:
-        "Create a new Paseo browser tab in this agent's workspace on the most recently connected browser automation host, opened in the background without switching the user's view. Pass an http(s) URL or a scheme-less host URL, which is treated as http; the returned browserId is used by tab-scoped tools.",
+        "Create a background browser tab in this agent's workspace using its selected browser host. Without a selection, choose and remember the only browser window on the daemon's machine; ambiguous or unavailable hosts require browser_list_hosts and browser_select_host. Pass an http(s) URL or a scheme-less host URL, which is treated as http; use the returned browserId for tab-scoped tools.",
       inputSchema: {
         url: BrowserHttpUrlInputSchema.optional(),
       },

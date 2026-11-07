@@ -28,6 +28,8 @@ jobs:
     env:
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
       ONNXRUNTIME_NODE_INSTALL: skip
+      # Metro workers need the same heap budget as the upstream ARM64 release job.
+      NODE_OPTIONS: --max-old-space-size=4096
     steps:
       - uses: actions/checkout@v4
         with:
